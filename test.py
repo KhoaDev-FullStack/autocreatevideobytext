@@ -3,18 +3,21 @@ import time
 from dotenv import load_dotenv
 import os
 from device import Device
+import track_file as trk
 # Load environment variables from .env file
 load_dotenv()
 
-#connect to device
+# init instance
 d = Device()
 
-# open app
+def autotest(device):
  
-d.open_app(os.getenv("APP_NAME"))
-d.click_by_text("Text to Video")
-d.click(0.334, 0.211)
-d.write_text("video about pepole vietname and in here, have car , restaurant", "Generate")
-d.click_by_text("Generate")
-d.click(0, 0.1)
-d.click_by_text("Generate")
+ device.open_app(os.getenv("APP_NAME"))
+ device.click_by_text("Text to Video")
+ device.click(0.715, 0.231)
+ device.write_text("about car , fish and animal",5)
+ device.click_by_text("Generate")
+ 
+ trk.get_newest_video_and_pull(device.get_serial())
+
+autotest(d)

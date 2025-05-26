@@ -1,12 +1,15 @@
-import uiautomator2 as u2
+import os
 import time
-import cv2
-import numpy as np
+import uiautomator2 as u2
+import logging
+import subprocess
 
+# Cấu hình logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class Device:
-    _instance = None      # Singleton instance
-    _device = None        # Device instance
+    _instance = None
+    _device = None
 
     def __new__(cls):
         if cls._instance is None:
@@ -14,16 +17,15 @@ class Device:
         return cls._instance
 
     def connect_to_device(self):
-        try:
-            if Device._device is None:  # Chỉ kết nối nếu chưa kết nối
+        if Device._device is None:
+            try:
                 Device._device = u2.connect()
-                print("notify: Connected to device successfully!")
-            else:
-                print("Device already connected.")
-            return Device._device
-        except Exception as e:
-            print("Error connect to device:", e)
-            return None
+                logging.info("Connected to device successfully.")
+            except Exception as e:
+                logging.error(f"Failed to connect to device: {e}")
+        else:
+            logging.info("Device already connected.")
+        return Device._device
 
     @property
     def device(self):
@@ -31,59 +33,129 @@ class Device:
             self.connect_to_device()
         return Device._device
 
-    def open_app(self, app_name):
+    @staticmethod
+    def get_connected_serial():
         try:
-            self.device.app_start(app_name)  # Run app
-            time.sleep(5)  # Wait for app to open
-            self.device.click(0.5, 0.5)  # Click to close ad if needed
-            print("notify: Opened application successfully!")
+            result = subprocess.run(["adb", "devices"], capture_output=True, text=True)
+            lines = result.stdout.strip().splitlines()
+
+            for line in lines[1:]:
+                if line.strip() and "device" in line:
+                    serial = line.split()[0]
+                    return serial
+            return None
         except Exception as e:
-            print("error open application:", e)
+            logging.error(f"Error getting device serial: {e}")
+            return None
+
+    def get_serial(self):
+        return self.get_connected_serial()
+    
+
+    
+    def open_app(self, app_name, timeout=10):
+     
+        try:
+            self.device.app_start(app_name)
+            self._wait_for_app_launch(app_name, timeout)
+            logging.info(f"Application '{app_name}' opened successfully.")
+        except Exception as e:
+            logging.error(f"Error opening app '{app_name}': {e}")
             self.device.press("home")
 
     def close_app(self, app_name):
+       
         try:
-            self.device.app_stop(app_name)  # Stop app
-            print("notify: Closed application successfully!")
+            self.device.app_stop(app_name)
+            logging.info(f"Application '{app_name}' closed successfully.")
         except Exception as e:
-            print("error close application:", e)
+            logging.error(f"Error closing app '{app_name}': {e}")
             self.device.press("home")
 
-    def click(self, x, y):
+    def click(self, x, y, delay=5):
+  
         try:
-            time.sleep(4)  
+            time.sleep(delay)
             self.device.click(x, y)
-            print("✅ notify: Clicked successfully!")
+            logging.info(f"Clicked at ({x}, {y}).")
         except Exception as e:
-            print("errro click:", e)
+            logging.error(f"Error clicking at ({x}, {y}): {e}")
             self.device.press("home")
 
-    def click_by_text(self, text):
+    def click_by_text(self, text, timeout=10):
+        
         try:
-            time.sleep(3)  # Wait for the UI to load
-            self.device(text=text).click()
-
-            print("notify: Clicked successfully!")
+            element = self._wait_for_element(text=text, timeout=timeout)
+            if element:
+                element.click()
+                logging.info(f"Clicked on element with text '{text}'.")
+            else:
+                logging.warning(f"Element with text '{text}' not found.")
         except Exception as e:
-            print("error click:", e)
+            logging.error(f"Error clicking by text '{text}': {e}")
             self.device.press("home")
 
     def back(self):
+     
         try:
             self.device.press("back")
-            print("notify: Back pressed successfully!")
+            logging.info("Back button pressed.")
         except Exception as e:
-            print("error back:", e)
+            logging.error(f"Error pressing back: {e}")
             self.device.press("home")
-    def write_text(self, text, action):
-     try:
-    
-            time.sleep(4)
-            self.device.send_keys(text)  # Send text to the device
-            self.device.send_action(action)
-            print("notify: Text written successfully!")
+
+    def write_text(self, input_text, delay=3):
         
-     except Exception as e:
-        print("error write text:", e)
-        self.device.press("home")
+        try:
+            time.sleep(delay)
+            self.device.send_keys(input_text)
+            logging.info(f"Input text '{input_text}'.")
+        except Exception as e:
+            logging.error(f"Error writing text '{input_text}': {e}")
+            self.device.press("home")
+
+    def _wait_for_app_launch(self, app_name, timeout):
+        
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            if self.device.app_current()['package'] == app_name:
+                return True
+            time.sleep(0.5)
+        logging.warning(f"Timeout waiting for app '{app_name}' to launch.")
+        return False
+
+    def _wait_for_element(self, text=None, resource_id=None, timeout=10):
+       
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            try:
+                if text:
+                    element = self.device(text=text)
+                elif resource_id:
+                    element = self.device(resourceId=resource_id)
+                else:
+                    logging.warning("No identifier provided for element wait.")
+                    return None
+                if element.exists:
+                    return element
+            except Exception:
+                pass
+            time.sleep(0.5)
+        return None
+
+    def take_screenshot(self, filename='screenshot.png'):
+        """Capture and save a screenshot."""
+        try:
+            self.device.screenshot(filename)
+            logging.info(f"Screenshot saved to {filename}.")
+        except Exception as e:
+            logging.error(f"Error taking screenshot: {e}")
+
+    def swipe(self, start_x, start_y, end_x, end_y, duration=800):
+        """Perform swipe gesture."""
+        try:
+            self.device.swipe(start_x, start_y, end_x, end_y, duration)
+            logging.info(f"Swiped from ({start_x}, {start_y}) to ({end_x}, {end_y}).")
+        except Exception as e:
+            logging.error(f"Error performing swipe: {e}")
 
